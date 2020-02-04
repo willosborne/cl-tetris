@@ -1,0 +1,10 @@
+(in-package :tetris)
+
+(defparameter +black+ (gamekit:vec4 0 0 0 1))
+(defparameter +red+ (gamekit:vec4 1 0 0 1))
+(defparameter +green+ (gamekit:vec4 0 1 0 1))
+(defparameter +blue+ (gamekit:vec4 0 0 1 1))
+(defparameter +yellow+ (gamekit:vec4 1 1 0 1))
+(defparameter +cyan+ (gamekit:vec4 0 1 1 1))
+(defparameter +purple+ (gamekit:vec4 0.5 0 0.5 1))
+(defparameter +orange+ (gamekit:vec4 1 0.5 0 1))
