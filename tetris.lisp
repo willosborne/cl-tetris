@@ -2,6 +2,10 @@
 
 (in-package #:tetris)
 
+(defmacro nlet (name let-vars &body body)
+  `(labels ((,name ,(mapcar #'car let-vars)
+              ,@body))
+     (,name ,@(mapcar #'cadr let-vars))))
 
 (defvar *origin* (gamekit:vec2 0 0))
 
@@ -160,12 +164,48 @@
                      *current-piece*
                      *current-piece-rotation*))))
 
+(defun get-new-rotation (old-rot direction)
+  (ecase direction
+    (:clockwise (ecase old-rot
+                  (:0 :90)
+                  (:90 :180)
+                  (:180 :270)
+                  (:270 :0)))
+    (:anticlockwise (ecase old-rot
+                      (:0 :270)
+                      (:90 :0)
+                      (:180 :90)
+                      (:270 :180)))))
+
+(defun try-rotate-piece (direction)
+  (when *current-piece*
+    (let* ((new-rot (get-new-rotation *current-piece-rotation* direction))
+           ;; (piece (get-piece-rotation *current-piece* new-rot))
+           (kicks-tree (if (eq *current-piece* :i)
+                           rotation-tests-i
+                           rotation-tests-others))
+           (kicks (get-kicks kicks-tree *current-piece-rotation* new-rot)))
+      (loop for (dx . dy) in (mapcar #'cons kicks (cdr kicks)) by #'cddr
+            do
+               (when (piece-fits-p (+ *current-piece-x* dx)
+                                   (+ *current-piece-y* dy)
+                                   *current-piece* new-rot *grid*)
+                 (setf *current-piece-rotation* new-rot
+                       *current-piece-x* (+ *current-piece-x* dx)
+                       *current-piece-y* (+ *current-piece-y* dy))
+                 (return t)))
+      )))
+
 (defun start ()
   (gamekit:start 'tetris-game)
   (flet ((move-left ()
            (try-move-piece -1 0))
          (move-right ()
            (try-move-piece 1 0))
+         (rotate-cw ()
+           (try-rotate-piece :clockwise))
+         (rotate-ccw ()
+           (try-rotate-piece :anticlockwise))
          )
     (gamekit:bind-button
      :left :repeating
@@ -180,6 +220,15 @@
     (gamekit:bind-button
      :right :pressed
      #'move-right)
+
+
+    (gamekit:bind-button
+     :z :pressed
+     #'rotate-ccw)
+
+    (gamekit:bind-button
+     :x :pressed
+     #'rotate-cw)
 
     (gamekit:bind-button
      :down :repeating
