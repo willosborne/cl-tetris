@@ -4,13 +4,37 @@
   "Quick 2D matrix function. Note: args must be of consistent size."
   (let ((h (length elements))
         (w (length (nth 0 elements))))
-    (make-array (list h w) :initial-contents elements)))
+    (make-array (list h w) :initial-contents (reverse elements))))
 
 (defstruct block-rotations
   r-0
   r-90
   r-180
   r-270)
+
+
+
+(defparameter rotation-tests-others
+  (list
+   '(:0   . ('(:90  . '(0 0  -1 0  -1  1   0 -2  -1 -2))
+             '(:270 . '(0 0   1 0   1  1   0 -2   1 -2))))
+   '(:90  . ('(:0   . '(0 0   1 0   1 -1   0  2   1  2))
+             '(:180 . '(0 0   1 0   1 -1   0  2   1  2))))
+   '(:180 . ('(:90  . '(0 0  -1 0  -1  1   0 -2  -1 -2))
+             '(:270 . '(0 0   1 0   1  1   0 -2   1 -2))))
+   '(:270 . ('(:180 . '(0 0  -1 0  -1 -1   0  2  -1  2))
+             '(:0   . '(0 0  -1 0  -1 -1   0  2  -1  2))))))
+
+(defparameter rotation-tests-i
+  (list
+   '(:0   . ('(:90  . '(0 0  -2 0   1  0  -2 -1   1  2))
+             '(:270 . '(0 0  -1 0   2  0  -1  2   2 -1))))
+   '(:90  . ('(:0   . '(0 0   2 0  -1  0   2  1  -1 -2))
+             '(:180 . '(0 0  -1 0   2  0  -1  2   2 -1))))
+   '(:180 . ('(:90  . '(0 0   1 0  -2  0   1 -2  -2  1))
+             '(:270 . '(0 0   2 0  -1  0   2  1  -1 -2))))
+   '(:270 . ('(:180 . '(0 0  -2 0   1  0  -2 -1   1  2))
+             '(:0   . '(0 0  -1 0  -2  0   1 -2  -2  1))))))
 
 
 (defvar i-0 ([] '((0 0 0 0)
@@ -48,7 +72,7 @@
 (defvar j-270 ([] '((0 1 0)
                     (0 1 0)
                     (1 1 0))))
-(defvar j-colour +blue+)
+(defvar j-colour +orange+)
 (defvar j-rotations (make-block-rotations
                      :r-0 j-0
                      :r-90 j-90
@@ -67,7 +91,7 @@
 (defvar l-270 ([] '((1 1 0)
                     (0 1 0)
                     (0 1 0))))
-(defvar l-colour +orange+)
+(defvar l-colour +blue+)
 (defvar l-rotations (make-block-rotations
                      :r-0 l-0
                      :r-90 l-90
