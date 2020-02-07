@@ -14,6 +14,30 @@
 (defparameter *grid-width* 10)
 (defparameter *grid-height* 20)
 
+(defparameter *spawn-x* 5)
+(defparameter *spawn-y* 20)
+
+(defparameter *score* 0)
+
+(defparameter *level* 0)
+
+(defun update-score (num-lines level)
+  (incf *score* (ecase num-lines
+                  (0 0)
+                  (1 (* 100 (1+ level)))
+                  (2 (* 300 (1+ level)))
+                  (3 (* 300 (1+ level)))
+                  (4 (* 1200 (1+ level)))
+
+
+                  )))
+
+(defun real-time-seconds ()
+  (/ (get-internal-real-time) internal-time-units-per-second))
+
+(defparameter *last-update* (real-time-seconds))
+(defparameter *update-delay* 0.5)
+
 
 (gamekit:defgame tetris-game () ()
   (:viewport-width (* *grid-width* *block-size*))
@@ -27,6 +51,7 @@
 (defvar *current-piece-x* nil)
 (defvar *current-piece-y* nil)
 (defvar *current-piece-rotation* nil)
+
 
 (defmacro loop-for-2d (i j cell-value grid &body body)
   (alexandria:with-gensyms (x y)
@@ -43,8 +68,10 @@
         *current-piece-rotation* :0)
   nil)
 
-(defun spawn-next-piece ()
-  (spawn-piece 5 15 :o))
+(defun spawn-next-piece (x y)
+  (let ((piece (get-next-queue-piece)))
+    (format t "Spawning ~a~%" piece)
+    (spawn-piece x y piece)))
 
 (defun get-piece-rotation (type rotation)
   (let* ((piece-rotations (ecase type
@@ -65,17 +92,19 @@
   (and (>= x 0)
        (< x *grid-width*)
        (>= y 0)
-       (< y *grid-height*)))
+       ;; (< y *grid-height*)
+       ))
 
 (defun piece-fits-p (x y type rotation grid)
   (let ((piece (get-piece-rotation type rotation)))
     (loop-for-2d i j cell piece
       (let ((px (+ x i))
             (py (+ y j)))
-        (when (or (not (in-range px py))
-                  (and cell
-                       (not (= cell 0))
-                       (aref grid py px)))
+        (when (and cell
+                   (not (= cell 0))
+                   (or
+                    (not (in-range px py))
+                    (aref grid py px)))
           (return-from piece-fits-p nil))))
     t))
 
@@ -116,7 +145,10 @@
       (draw-cell i j cell))))
 
 (defun reset ()
-  (setf *grid* (make-array '(40 10) :initial-element nil))
+  (setf *grid* (make-array '(40 10) :initial-element nil)
+        *last-update* (real-time-seconds)
+        *score* 0)
+  (reset-piece-queue)
   t)
 
 (defmethod gamekit:draw ((app tetris-game))
@@ -127,9 +159,13 @@
                      )
   (draw-grid *grid*)
   (when (and *current-piece* *current-piece-x* *current-piece-y*)
-    (draw-piece *current-piece-x* *current-piece-y* *current-piece* *current-piece-rotation*)
-    )
-  )
+    (draw-piece *current-piece-x* *current-piece-y* *current-piece* *current-piece-rotation*)))
+
+(defmethod gamekit:act ((app tetris-game))
+  (let ((time (real-time-seconds)))
+    (when (>= (- time *last-update*) *update-delay*)
+      (soft-drop)
+      (setf *last-update* time))))
 
 (defun try-move-piece (dx dy)
   (when *current-piece*
@@ -153,8 +189,8 @@
           finally (lock-in-piece *current-piece-x* y
                                  *current-piece*
                                  *current-piece-rotation*)
-                  (setf *current-piece* nil)
-          )))
+                  (clear-lines)
+                  (spawn-next-piece *spawn-x* *spawn-y*))))
 
 (defun soft-drop ()
   (when *current-piece*
@@ -162,7 +198,30 @@
       ;; piece was blocked
       (lock-in-piece *current-piece-x* *current-piece-y*
                      *current-piece*
-                     *current-piece-rotation*))))
+                     *current-piece-rotation*)
+      (clear-lines)
+      (spawn-next-piece *spawn-x* *spawn-y*))))
+
+(defun clear-single-line (cleared-y)
+  (loop for y from cleared-y below (1- *grid-height*) do
+    (loop for x from 0 below *grid-width* do
+      (setf (aref *grid* y x) (aref *grid* (1+ y) x))))
+  (loop for x from 0 below *grid-width* do
+        (setf (aref *grid* (1- *grid-height*) x) nil)))
+
+(defun line-filled-p (y)
+  (loop for x from 0 below *grid-width*
+        always (aref *grid* y x)))
+
+(defun clear-lines ()
+  (let ((lines-cleared 0))
+    (loop for y from 0 below *grid-height* do
+      (loop while (line-filled-p y) do
+        (clear-single-line y)
+        (incf lines-cleared)))
+    (when (> lines-cleared 0)
+      (format t "Cleared ~a lines.~%" lines-cleared))
+    (update-score lines-cleared *level*)))
 
 (defun get-new-rotation (old-rot direction)
   (ecase direction

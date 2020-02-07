@@ -10,4 +10,5 @@
   :components ((:file "package")
                (:file "colours")
                (:file "blocks")
+               (:file "piece-bag")
                (:file "tetris")))
