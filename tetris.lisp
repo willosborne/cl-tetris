@@ -131,72 +131,7 @@
           (setf (aref *grid* (+ y piece-j) (+ x piece-i)) type)))
       t)))
 
-(defun draw-cell (x y type)
-  (let ((colour (ecase type
-                  (:l l-colour)
-                  (:j j-colour)
-                  (:o o-colour)
-                  (:s s-colour)
-                  (:z z-colour)
-                  (:i i-colour)
-                  (:t t-colour))))
-    (gamekit:draw-rect (gamekit:vec2 (* x *block-size*)
-                                     (* y *block-size*))
-                       *block-size*
-                       *block-size*
-                       :fill-paint colour)))
 
-(defun draw-piece (x y type rotation)
-  (let ((piece (get-piece-rotation type rotation)))
-    (loop-for-2d piece-i piece-j value piece
-      (when (and value (not (= value 0)))
-        (draw-cell (+ x piece-i)
-                   (+ y piece-j)
-                   type)))))
-
-(defun draw-grid (grid)
-  (loop-for-2d i j cell grid
-    (when cell
-      (draw-cell i j cell))))
-
-(defun reset ()
-  (setf *grid* (make-array '(40 10) :initial-element nil)
-        *last-update* (real-time-seconds)
-        *score* 0
-        *hold-piece* nil)
-  (reset-piece-queue)
-  t)
-
-(defun draw-queue ()
-  (nlet recur ((queue *piece-queue*)
-               (y (- *grid-height* 4))
-               (count 5))
-    (when (> count 0)
-      (draw-piece (+ *grid-width* 1) y
-                  (car queue) :0)
-      (recur (cdr queue)
-             (- y
-                (array-dimension (get-piece-rotation (car queue) :0) 0))
-             (1- count)))))
-
-(defmethod gamekit:draw ((app tetris-game))
-  (gamekit:draw-rect *origin* *window-width* *window-height*
-                     :fill-paint (gamekit:vec4 0 0 0 1))
-  (gamekit:draw-rect *origin*
-                     (* *block-size* 10)
-                     (* *block-size* 40)
-                     :fill-paint (gamekit:vec4 0.6 0.6 0.6 1))
-  (draw-grid *grid*)
-  (when (and *current-piece* *current-piece-x* *current-piece-y*)
-    (draw-piece *current-piece-x* *current-piece-y* *current-piece* *current-piece-rotation*))
-  (continuable (draw-queue)))
-
-(defmethod gamekit:act ((app tetris-game))
-  (let ((time (real-time-seconds)))
-    (when (>= (- time *last-update*) *update-delay*)
-      (when (not *paused*)
-        (soft-drop))
-      (setf *last-update* time))))
 
 (defun try-move-piece (dx dy)
   (when *current-piece*
@@ -208,20 +143,39 @@
           t)
         nil)))
 
+(defun hard-drop-position (x start-y type rotation)
+  (loop for y downfrom start-y
+        until (not
+               (piece-fits-p
+                x (1- y)
+                type
+                rotation
+                *grid*))
+        finally (return (list x y))))
+
 (defun try-hard-drop ()
-  (when *current-piece*
-    (loop for y downfrom *current-piece-y*
-          until (not
-                 (piece-fits-p
-                  *current-piece-x* (1- y)
-                  *current-piece*
-                  *current-piece-rotation*
-                  *grid*))
-          finally (lock-in-piece *current-piece-x* y
-                                 *current-piece*
-                                 *current-piece-rotation*)
-                  (clear-lines)
-                  (spawn-next-piece *spawn-x* *spawn-y*))))
+  (continuable
+    (when *current-piece*
+      (destructuring-bind (x y) (hard-drop-position *current-piece-x*
+                                                    *current-piece-y*
+                                                    *current-piece*
+                                                    *current-piece-rotation*)
+        (lock-in-piece x y *current-piece* *current-piece-rotation*)
+        (clear-lines)
+        (spawn-next-piece *spawn-x* *spawn-y*))
+      ;; (loop for y downfrom *current-piece-y*
+      ;;       until (not
+      ;;              (piece-fits-p
+      ;;               *current-piece-x* (1- y)
+      ;;               *current-piece*
+      ;;               *current-piece-rotation*
+      ;;               *grid*))
+      ;;       finally (lock-in-piece *current-piece-x* y
+      ;;                              *current-piece*
+      ;;                              *current-piece-rotation*)
+      ;;               (clear-lines)
+      ;;               (spawn-next-piece *spawn-x* *spawn-y*))
+     )))
 
 (defun soft-drop ()
   (when *current-piece*
@@ -296,6 +250,87 @@
           (setf *hold-piece* *current-piece*)
           (spawn-next-piece *spawn-x* *spawn-y*)))))
 
+
+(defun draw-cell (x y type &optional (alpha 1))
+  (let ((colour (vec4-copy (ecase type
+                             (:l l-colour)
+                             (:j j-colour)
+                             (:o o-colour)
+                             (:s s-colour)
+                             (:z z-colour)
+                             (:i i-colour)
+                             (:t t-colour)))))
+    (setf (bodge-math:w colour) alpha)
+    (gamekit:draw-rect (gamekit:vec2 (* x *block-size*)
+                                     (* y *block-size*))
+                       *block-size*
+                       *block-size*
+                       :fill-paint colour)))
+
+(defun draw-piece (x y type rotation &optional (alpha 1))
+  (let ((piece (get-piece-rotation type rotation)))
+    (loop-for-2d piece-i piece-j value piece
+      (when (and value (not (= value 0)))
+        (draw-cell (+ x piece-i)
+                   (+ y piece-j)
+                   type
+                   alpha)))))
+
+(defun draw-grid (grid)
+  (loop-for-2d i j cell grid
+    (when cell
+      (draw-cell i j cell))))
+
+(defun reset ()
+  (setf *grid* (make-array '(40 10) :initial-element nil)
+        *last-update* (real-time-seconds)
+        *score* 0
+        *hold-piece* nil)
+  (reset-piece-queue)
+  t)
+
+(defun draw-queue ()
+  (nlet recur ((queue *piece-queue*)
+               (y (- *grid-height* 4))
+               (count 5))
+    (when (> count 0)
+      (draw-piece (+ *grid-width* 1) y
+                  (car queue) :0)
+      (recur (cdr queue)
+             (- y
+                (array-dimension (get-piece-rotation (car queue) :0) 0))
+             (1- count)))))
+
+(defun draw-ghost-piece ()
+  (when *current-piece*
+    (destructuring-bind (x y) (hard-drop-position *current-piece-x*
+                                                  *current-piece-y*
+                                                  *current-piece*
+                                                  *current-piece-rotation*)
+      (draw-piece x y *current-piece* *current-piece-rotation* 0.5))))
+
+(defmethod gamekit:draw ((app tetris-game))
+  (gamekit:draw-rect *origin* *window-width* *window-height*
+                     :fill-paint (gamekit:vec4 0 0 0 1))
+  (gamekit:draw-rect *origin*
+                     (* *block-size* 10)
+                     (* *block-size* 40)
+                     :fill-paint (gamekit:vec4 0.6 0.6 0.6 1))
+  (draw-grid *grid*)
+  (when (and *current-piece* *current-piece-x* *current-piece-y*)
+    (draw-piece *current-piece-x* *current-piece-y* *current-piece* *current-piece-rotation*)
+    (continuable (draw-ghost-piece)))
+  (continuable (draw-queue)))
+
+
+(defmethod gamekit:act ((app tetris-game))
+  (let ((time (real-time-seconds)))
+    (when (>= (- time *last-update*) *update-delay*)
+      (when (not *paused*)
+        (soft-drop))
+      (setf *last-update* time))))
+
+
 (defun start ()
   (gamekit:start 'tetris-game)
   (flet ((move-left ()
@@ -351,4 +386,5 @@
 
 (defun start-game ()
   (reset)
-  (start))
+  (start)
+  (spawn-next-piece *spawn-x* *spawn-y*))

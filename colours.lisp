@@ -1,5 +1,11 @@
 (in-package :tetris)
 
+(defun vec4-copy (vec)
+  (gamekit:vec4 (bodge-math:x vec)
+                (bodge-math:y vec)
+                (bodge-math:z vec)
+                (bodge-math:w vec)))
+
 (defparameter +black+ (gamekit:vec4 0 0 0 1))
 (defparameter +red+ (gamekit:vec4 1 0 0 1))
 (defparameter +green+ (gamekit:vec4 0 1 0 1))
