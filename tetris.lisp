@@ -2,6 +2,15 @@
 
 (in-package #:tetris)
 
+
+(defmacro continuable (&body body)
+  "Helper macro that we can use to allow us to continue from an
+   error. Remember to hit C in slime or pick the restart so
+   errors don't kill the app."
+  `(restart-case
+       (progn ,@body)
+     (continue () :report "Swank.Live: Continue")))
+
 (defmacro nlet (name let-vars &body body)
   `(labels ((,name ,(mapcar #'car let-vars)
               ,@body))
@@ -14,6 +23,12 @@
 (defparameter *grid-width* 10)
 (defparameter *grid-height* 20)
 
+(defparameter *game-width* (* *grid-width* *block-size*))
+(defparameter *game-height* (* *grid-height* *block-size*))
+
+(defparameter *window-width* (* (+ 5 *grid-width*) *block-size*))
+(defparameter *window-height* (* *grid-height* *block-size*))
+
 (defparameter *spawn-x* 5)
 (defparameter *spawn-y* 20)
 
@@ -21,16 +36,17 @@
 
 (defparameter *level* 0)
 
+(defparameter *paused* nil)
+
+(defparameter *hold-piece* nil)
+
 (defun update-score (num-lines level)
   (incf *score* (ecase num-lines
                   (0 0)
                   (1 (* 100 (1+ level)))
                   (2 (* 300 (1+ level)))
                   (3 (* 300 (1+ level)))
-                  (4 (* 1200 (1+ level)))
-
-
-                  )))
+                  (4 (* 1200 (1+ level))))))
 
 (defun real-time-seconds ()
   (/ (get-internal-real-time) internal-time-units-per-second))
@@ -40,8 +56,8 @@
 
 
 (gamekit:defgame tetris-game () ()
-  (:viewport-width (* *grid-width* *block-size*))
-  (:viewport-height (* *grid-height* *block-size*)))
+  (:viewport-width  *window-width*)
+  (:viewport-height *window-height*))
 
 (defparameter *grid* (make-array (list *grid-height*
                                        *grid-width*)
@@ -70,7 +86,6 @@
 
 (defun spawn-next-piece (x y)
   (let ((piece (get-next-queue-piece)))
-    (format t "Spawning ~a~%" piece)
     (spawn-piece x y piece)))
 
 (defun get-piece-rotation (type rotation)
@@ -147,24 +162,40 @@
 (defun reset ()
   (setf *grid* (make-array '(40 10) :initial-element nil)
         *last-update* (real-time-seconds)
-        *score* 0)
+        *score* 0
+        *hold-piece* nil)
   (reset-piece-queue)
   t)
 
+(defun draw-queue ()
+  (nlet recur ((queue *piece-queue*)
+               (y (- *grid-height* 4))
+               (count 5))
+    (when (> count 0)
+      (draw-piece (+ *grid-width* 1) y
+                  (car queue) :0)
+      (recur (cdr queue)
+             (- y
+                (array-dimension (get-piece-rotation (car queue) :0) 0))
+             (1- count)))))
+
 (defmethod gamekit:draw ((app tetris-game))
+  (gamekit:draw-rect *origin* *window-width* *window-height*
+                     :fill-paint (gamekit:vec4 0 0 0 1))
   (gamekit:draw-rect *origin*
                      (* *block-size* 10)
                      (* *block-size* 40)
-                     :fill-paint (gamekit:vec4 0.6 0.6 0.6 1)
-                     )
+                     :fill-paint (gamekit:vec4 0.6 0.6 0.6 1))
   (draw-grid *grid*)
   (when (and *current-piece* *current-piece-x* *current-piece-y*)
-    (draw-piece *current-piece-x* *current-piece-y* *current-piece* *current-piece-rotation*)))
+    (draw-piece *current-piece-x* *current-piece-y* *current-piece* *current-piece-rotation*))
+  (continuable (draw-queue)))
 
 (defmethod gamekit:act ((app tetris-game))
   (let ((time (real-time-seconds)))
     (when (>= (- time *last-update*) *update-delay*)
-      (soft-drop)
+      (when (not *paused*)
+        (soft-drop))
       (setf *last-update* time))))
 
 (defun try-move-piece (dx dy)
@@ -252,8 +283,18 @@
                  (setf *current-piece-rotation* new-rot
                        *current-piece-x* (+ *current-piece-x* dx)
                        *current-piece-y* (+ *current-piece-y* dy))
-                 (return t)))
-      )))
+                 (return t))))))
+
+(defun swap-hold-piece ()
+  (let ((current *current-piece*))
+    (if *hold-piece*
+        (setf *current-piece* *hold-piece*
+              *hold-piece* current
+              *current-piece-x* *spawn-x*
+              *current-piece-y* *spawn-y*)
+        (progn
+          (setf *hold-piece* *current-piece*)
+          (spawn-next-piece *spawn-x* *spawn-y*)))))
 
 (defun start ()
   (gamekit:start 'tetris-game)
@@ -290,6 +331,15 @@
      #'rotate-cw)
 
     (gamekit:bind-button
+     :r :pressed
+     #'reset)
+
+
+    (gamekit:bind-button
+     :space :pressed
+     #'swap-hold-piece)
+
+    (gamekit:bind-button
      :down :repeating
      #'soft-drop)
     (gamekit:bind-button
@@ -297,7 +347,8 @@
      #'soft-drop)
     (gamekit:bind-button
      :up :pressed
-     (lambda ()
-       (restart-case (try-hard-drop)
-         (continue ()))))))
+     #'try-hard-drop)))
 
+(defun start-game ()
+  (reset)
+  (start))
